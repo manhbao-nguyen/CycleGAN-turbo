@@ -423,7 +423,6 @@ class UnpairedDataset(torch.utils.data.Dataset):
         #         self.fixed_caption_src, max_length=self.tokenizer.model_max_length,
         #         padding="max_length", truncation=True, return_tensors="pt"
         #     ).input_ids
-
         
         img_pil_src = Image.open(img_path_src).convert("RGB")
         img_pil_tgt = Image.open(img_path_tgt).convert("RGB")
