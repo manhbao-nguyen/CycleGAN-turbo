@@ -84,20 +84,19 @@ def initialize_vae(rank=4, return_lora_module_names=False):
     vae.requires_grad_(True)
     vae.train()
     # add the skip connection convs
-    vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
-    vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
-    vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
-    vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
-    torch.nn.init.constant_(vae.decoder.skip_conv_1.weight, 1e-5)
-    torch.nn.init.constant_(vae.decoder.skip_conv_2.weight, 1e-5)
-    torch.nn.init.constant_(vae.decoder.skip_conv_3.weight, 1e-5)
-    torch.nn.init.constant_(vae.decoder.skip_conv_4.weight, 1e-5)
+    # vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
+    # vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
+    # vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
+    # vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda().requires_grad_(True)
+    # torch.nn.init.constant_(vae.decoder.skip_conv_1.weight, 1e-5)
+    # torch.nn.init.constant_(vae.decoder.skip_conv_2.weight, 1e-5)
+    # torch.nn.init.constant_(vae.decoder.skip_conv_3.weight, 1e-5)
+    # torch.nn.init.constant_(vae.decoder.skip_conv_4.weight, 1e-5)
     vae.decoder.ignore_skip = False
     vae.decoder.gamma = 1
     l_vae_target_modules = ["conv1","conv2","conv_in", "conv_shortcut",
-        "conv", "conv_out", "skip_conv_1", "skip_conv_2", "skip_conv_3", 
-        "skip_conv_4", "to_k", "to_q", "to_v", "to_out.0",
-    ]
+        "conv", "conv_out", "to_k", "to_q", "to_v", "to_out.0",
+    ] #"skip_conv_1", "skip_conv_2", "skip_conv_3", "skip_conv_4",
     vae_lora_config = LoraConfig(r=rank, init_lora_weights="gaussian", target_modules=l_vae_target_modules)
     vae.add_adapter(vae_lora_config, adapter_name="vae_skip")
     if return_lora_module_names:
@@ -200,6 +199,7 @@ class CycleGAN_Turbo(torch.nn.Module):
     def forward_with_networks(x, direction, vae_enc, unet, vae_dec, sched, timesteps, text_emb):
         B = x.shape[0]
         assert direction in ["a2b", "b2a"]
+       
         x_enc = vae_enc(x, direction=direction).to(x.dtype)
         model_pred = unet(x_enc, timesteps, encoder_hidden_states=text_emb,).sample
         x_out = torch.stack([sched.step(model_pred[i], timesteps[i], x_enc[i], return_dict=True).prev_sample for i in range(B)])
@@ -222,20 +222,20 @@ class CycleGAN_Turbo(torch.nn.Module):
             if "lora" in n and "vae_skip" in n:
                 assert p.requires_grad
                 params_gen.append(p)
-        params_gen = params_gen + list(vae_a2b.decoder.skip_conv_1.parameters())
-        params_gen = params_gen + list(vae_a2b.decoder.skip_conv_2.parameters())
-        params_gen = params_gen + list(vae_a2b.decoder.skip_conv_3.parameters())
-        params_gen = params_gen + list(vae_a2b.decoder.skip_conv_4.parameters())
+        # params_gen = params_gen + list(vae_a2b.decoder.skip_conv_1.parameters())
+        # params_gen = params_gen + list(vae_a2b.decoder.skip_conv_2.parameters())
+        # params_gen = params_gen + list(vae_a2b.decoder.skip_conv_3.parameters())
+        # params_gen = params_gen + list(vae_a2b.decoder.skip_conv_4.parameters())
 
         # add all vae_b2a parameters
         for n,p in vae_b2a.named_parameters():
             if "lora" in n and "vae_skip" in n:
                 assert p.requires_grad
                 params_gen.append(p)
-        params_gen = params_gen + list(vae_b2a.decoder.skip_conv_1.parameters())
-        params_gen = params_gen + list(vae_b2a.decoder.skip_conv_2.parameters())
-        params_gen = params_gen + list(vae_b2a.decoder.skip_conv_3.parameters())
-        params_gen = params_gen + list(vae_b2a.decoder.skip_conv_4.parameters())
+        # params_gen = params_gen + list(vae_b2a.decoder.skip_conv_1.parameters())
+        # params_gen = params_gen + list(vae_b2a.decoder.skip_conv_2.parameters())
+        # params_gen = params_gen + list(vae_b2a.decoder.skip_conv_3.parameters())
+        # params_gen = params_gen + list(vae_b2a.decoder.skip_conv_4.parameters())
         return params_gen
 
     def forward(self, x_t, direction=None, caption=None, caption_emb=None):

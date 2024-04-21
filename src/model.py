@@ -34,12 +34,15 @@ def my_vae_decoder_fwd(self, sample, latent_embeds=None):
     sample = self.mid_block(sample, latent_embeds)
     sample = sample.to(upscale_dtype)
     if not self.ignore_skip:
-        skip_convs = [self.skip_conv_1, self.skip_conv_2, self.skip_conv_3, self.skip_conv_4]
+        #skip_convs = [self.skip_conv_1, self.skip_conv_2, self.skip_conv_3, self.skip_conv_4]
         # up
         for idx, up_block in enumerate(self.up_blocks):
-            skip_in = skip_convs[idx](self.incoming_skip_acts[::-1][idx] * self.gamma)
+            #skip_in = skip_convs[idx](self.incoming_skip_acts[::-1][idx] * self.gamma)
             # add skip
-            sample = sample + skip_in
+            try:
+                sample = sample #+ skip_in
+            except:
+                breakpoint()
             sample = up_block(sample, latent_embeds)
     else:
         for idx, up_block in enumerate(self.up_blocks):

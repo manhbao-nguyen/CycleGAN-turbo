@@ -55,7 +55,7 @@ def parse_args_paired_training(input_args=None):
     parser.add_argument("--train_batch_size", type=int, default=4, help="Batch size (per device) for the training dataloader.")
     parser.add_argument("--num_training_epochs", type=int, default=10)
     parser.add_argument("--max_train_steps", type=int, default=10_000,)
-    parser.add_argument("--checkpointing_steps", type=int, default=500,)
+    parser.add_argument("--checkpointing_steps", type=int, default=1000,)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of updates steps to accumulate before performing a backward/update pass.",)
     parser.add_argument("--gradient_checkpointing", action="store_true",)
     parser.add_argument("--learning_rate", type=float, default=5e-6)
@@ -198,7 +198,7 @@ def build_transform(image_prep):
         ])
     elif image_prep == "resize_286_randomcrop_256x256_hflip":
         T = transforms.Compose([
-            transforms.Resize((286, 286), interpolation=Image.LANCZOS),
+            transforms.Resize((286, 286), interpolation=Image.LANCZOS), #TODO: 512, 512
             transforms.RandomCrop((256, 256)),
             transforms.RandomHorizontalFlip(),
         ])
@@ -354,6 +354,14 @@ class UnpairedDataset(torch.utils.data.Dataset):
             self.l_imgs_tgt.extend(glob(os.path.join(self.target_folder, ext)))
         self.T = build_transform(image_prep)
 
+        with open(os.path.join(dataset_folder, "captions_a.json"), "r") as json_file_a:
+                captions_a = json.load(json_file_a)
+        self.idx2captions_a = captions_a
+
+        with open(os.path.join(dataset_folder, "captions_b.json"), "r") as json_file_b:
+                captions_b = json.load(json_file_b)
+        self.idx2captions_b = captions_b
+
     def __len__(self):
         """
         Returns:
@@ -393,6 +401,30 @@ class UnpairedDataset(torch.utils.data.Dataset):
         else:
             img_path_src = random.choice(self.l_imgs_src)
         img_path_tgt = random.choice(self.l_imgs_tgt)
+
+        img_src_idx = os.path.basename(img_path_src)
+        img_tgt_idx = os.path.basename(img_path_tgt)
+
+        if img_src_idx in self.idx2captions_a:
+            caption_src_or = self.idx2captions_a[img_src_idx]["cap_original"]
+            caption_src_ed = self.idx2captions_a[img_src_idx]["cap_edited"] 
+        else:
+            caption_src_or = self.fixed_caption_src 
+            caption_src_ed = self.fixed_caption_tgt
+
+        if img_tgt_idx in self.idx2captions_b:
+            caption_tgt_or = self.idx2captions_b[img_tgt_idx]["cap_original"]
+            caption_tgt_ed = self.idx2captions_b[img_tgt_idx]["cap_edited"] 
+        else:
+            caption_tgt_or = self.fixed_caption_tgt
+            caption_tgt_ed = self.fixed_caption_src
+
+        # self.input_ids_src = self.tokenizer(
+        #         self.fixed_caption_src, max_length=self.tokenizer.model_max_length,
+        #         padding="max_length", truncation=True, return_tensors="pt"
+        #     ).input_ids
+
+        
         img_pil_src = Image.open(img_path_src).convert("RGB")
         img_pil_tgt = Image.open(img_path_tgt).convert("RGB")
         img_t_src = F.to_tensor(self.T(img_pil_src))
@@ -402,8 +434,10 @@ class UnpairedDataset(torch.utils.data.Dataset):
         return {
             "pixel_values_src": img_t_src,
             "pixel_values_tgt": img_t_tgt,
-            "caption_src": self.fixed_caption_src,
-            "caption_tgt": self.fixed_caption_tgt,
-            "input_ids_src": self.input_ids_src,
-            "input_ids_tgt": self.input_ids_tgt,
+            # "caption_src_or": self.fixed_caption_src,
+            # "caption_tgt_or": self.fixed_caption_tgt,
+            "input_ids_src_or": self.tokenizer(caption_src_or, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,
+            "input_ids_src_ed": self.tokenizer(caption_src_ed, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,
+            "input_ids_tgt_or": self.tokenizer(caption_tgt_or, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,
+            "input_ids_tgt_ed": self.tokenizer(caption_tgt_ed, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids, 
         }

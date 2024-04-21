@@ -47,14 +47,17 @@ def main(args):
         net_disc_a.cv_ensemble.requires_grad_(False)  # Freeze feature extractor
         net_disc_b = vision_aided_loss.Discriminator(cv_type='clip', loss_type=args.gan_loss_type, device="cuda")
         net_disc_b.cv_ensemble.requires_grad_(False)  # Freeze feature extractor
+    
 
-    crit_cycle, crit_idt = torch.nn.L1Loss(), torch.nn.L1Loss()
+    print("loaded models!")
+
+    crit_cycle, crit_idt = torch.nn.L1Loss(), torch.nn.L1Loss() #TODO:  MODIFY these losses? 
 
     if args.enable_xformers_memory_efficient_attention:
         unet.enable_xformers_memory_efficient_attention()
 
     if args.gradient_checkpointing:
-        unet.enable_gradient_checkpointing()
+        unet.enable_gradient_checkpointing() #TODO: is it useful?
 
     if args.allow_tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -85,6 +88,7 @@ def main(args):
     for ext in ["*.jpg", "*.jpeg", "*.png", "*.bmp"]:
         l_images_tgt_test.extend(glob(os.path.join(args.dataset_folder, "test_B", ext)))
     l_images_src_test, l_images_tgt_test = sorted(l_images_src_test), sorted(l_images_tgt_test)
+    print("here we are")
 
     # make the reference FID statistics
     if accelerator.is_main_process:
@@ -96,10 +100,13 @@ def main(args):
         os.makedirs(output_dir_ref, exist_ok=True)
         # transform all images according to the validation transform and save them
         for _path in tqdm(l_images_tgt_test):
-            _img = T_val(Image.open(_path).convert("RGB"))
-            outf = os.path.join(output_dir_ref, os.path.basename(_path)).replace(".jpg", ".png")
-            if not os.path.exists(outf):
-                _img.save(outf)
+            try:
+                _img = T_val(Image.open(_path).convert("RGB"))
+                outf = os.path.join(output_dir_ref, os.path.basename(_path)).replace(".jpg", ".png")
+                if not os.path.exists(outf):
+                    _img.save(outf)
+            except:
+                continue
         # compute the features for the reference images
         ref_features = get_folder_features(output_dir_ref, model=feat_model, num_workers=0, num=None,
                         shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
@@ -113,17 +120,20 @@ def main(args):
         output_dir_ref = os.path.join(args.output_dir, "fid_reference_b2a")
         os.makedirs(output_dir_ref, exist_ok=True)
         for _path in tqdm(l_images_src_test):
-            _img = T_val(Image.open(_path).convert("RGB"))
-            outf = os.path.join(output_dir_ref, os.path.basename(_path)).replace(".jpg", ".png")
-            if not os.path.exists(outf):
-                _img.save(outf)
+            try:
+                _img = T_val(Image.open(_path).convert("RGB"))
+                outf = os.path.join(output_dir_ref, os.path.basename(_path)).replace(".jpg", ".png")
+                if not os.path.exists(outf):
+                    _img.save(outf)
+            except:
+                continue
         # compute the features for the reference images
         ref_features = get_folder_features(output_dir_ref, model=feat_model, num_workers=0, num=None,
                         shuffle=False, seed=0, batch_size=8, device=torch.device("cuda"),
                         mode="clean", custom_fn_resize=None, description="", verbose=True,
                         custom_image_tranform=None)
         b2a_ref_mu, b2a_ref_sigma = np.mean(ref_features, axis=0), np.cov(ref_features, rowvar=False)
-
+    print("we have FID")
     lr_scheduler_gen = get_scheduler(args.lr_scheduler, optimizer=optimizer_gen,
         num_warmup_steps=args.lr_warmup_steps * accelerator.num_processes,
         num_training_steps=args.max_train_steps * accelerator.num_processes,
@@ -141,7 +151,7 @@ def main(args):
     fixed_a2b_emb_base = text_encoder(fixed_a2b_tokens.cuda().unsqueeze(0))[0].detach()
     fixed_b2a_tokens = tokenizer(fixed_caption_src, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt").input_ids[0]
     fixed_b2a_emb_base = text_encoder(fixed_b2a_tokens.cuda().unsqueeze(0))[0].detach()
-    del text_encoder, tokenizer  # free up some memory
+    del tokenizer # text_encoder # free up some memory
 
     unet, vae_enc, vae_dec, net_disc_a, net_disc_b = accelerator.prepare(unet, vae_enc, vae_dec, net_disc_a, net_disc_b)
     net_lpips, optimizer_gen, optimizer_disc, train_dataloader, lr_scheduler_gen, lr_scheduler_disc = accelerator.prepare(
@@ -162,6 +172,7 @@ def main(args):
         if "attn" in name:
             module.fused_attn = False
 
+    print("We are ready to start training!")
     for epoch in range(first_epoch, args.max_train_epochs):
         for step, batch in enumerate(train_dataloader):
             l_acc = [unet, net_disc_a, net_disc_b, vae_enc, vae_dec]
@@ -178,13 +189,19 @@ def main(args):
                 Cycle Objective
                 """
                 # A -> fake B -> rec A
-                cyc_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
-                cyc_rec_a = CycleGAN_Turbo.forward_with_networks(cyc_fake_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                #TODO: optimize for bsz > 1
+                encoding_src_ed = text_encoder(batch["input_ids_src_ed"].cuda().unsqueeze(0))[0].detach()
+                encoding_tgt_ed = text_encoder(batch["input_ids_tgt_ed"].cuda().unsqueeze(0))[0].detach()
+                encoding_tgt_or = text_encoder(batch["input_ids_tgt_or"].cuda().unsqueeze(0))[0].detach()
+                encoding_src_or = text_encoder(batch["input_ids_src_or"].cuda().unsqueeze(0))[0].detach()
+
+                cyc_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
+                cyc_rec_a = CycleGAN_Turbo.forward_with_networks(cyc_fake_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_or)
                 loss_cycle_a = crit_cycle(cyc_rec_a, img_a) * args.lambda_cycle
-                loss_cycle_a += net_lpips(cyc_rec_a, img_a).mean() * args.lambda_cycle_lpips
+                loss_cycle_a += net_lpips(cyc_rec_a, img_a).mean() * args.lambda_cycle_lpips #TODO: voir si on peut enlever ou pas 
                 # B -> fake A -> rec B
-                cyc_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
-                cyc_rec_b = CycleGAN_Turbo.forward_with_networks(cyc_fake_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                cyc_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
+                cyc_rec_b = CycleGAN_Turbo.forward_with_networks(cyc_fake_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_or) #TODO: OOM error happens here
                 loss_cycle_b = crit_cycle(cyc_rec_b, img_b) * args.lambda_cycle
                 loss_cycle_b += net_lpips(cyc_rec_b, img_b).mean() * args.lambda_cycle_lpips
                 accelerator.backward(loss_cycle_a + loss_cycle_b, retain_graph=False)
@@ -198,13 +215,14 @@ def main(args):
                 """
                 Generator Objective (GAN) for task a->b and b->a (fake inputs)
                 """
-                fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
-                fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
-                loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan
+                fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
+                fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
+                loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan #TODO: not sure about this order
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
                 accelerator.backward(loss_gan_a + loss_gan_b, retain_graph=False)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
+
                 optimizer_gen.step()
                 lr_scheduler_gen.step()
                 optimizer_gen.zero_grad()
@@ -212,10 +230,10 @@ def main(args):
                 """
                 Identity Objective
                 """
-                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
                 loss_idt_a = crit_idt(idt_a, img_b) * args.lambda_idt
-                loss_idt_a += net_lpips(idt_a, img_b).mean() * args.lambda_idt_lpips
-                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                loss_idt_a += net_lpips(idt_a, img_b).mean() * args.lambda_idt_lpips #TODO: what is net_lpips? 
+                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
                 loss_idt_b = crit_idt(idt_b, img_a) * args.lambda_idt
                 loss_idt_b += net_lpips(idt_b, img_a).mean() * args.lambda_idt_lpips
                 loss_g_idt = loss_idt_a + loss_idt_b
@@ -323,6 +341,7 @@ def main(args):
                                 break
                             outf = os.path.join(fid_output_dir, f"{idx}.png")
                             with torch.no_grad():
+                                
                                 input_img = T_val(Image.open(input_img_path).convert("RGB"))
                                 img_a = transforms.ToTensor()(input_img)
                                 img_a = transforms.Normalize([0.5], [0.5])(img_a).unsqueeze(0).cuda()
@@ -330,6 +349,7 @@ def main(args):
                                     eval_vae_dec, noise_scheduler_1step, _timesteps, fixed_a2b_emb[0:1])
                                 eval_fake_b_pil = transforms.ToPILImage()(eval_fake_b[0] * 0.5 + 0.5)
                                 eval_fake_b_pil.save(outf)
+                                
                                 a = net_dino.preprocess(input_img).unsqueeze(0).cuda()
                                 b = net_dino.preprocess(eval_fake_b_pil).unsqueeze(0).cuda()
                                 dino_ssim = net_dino.calculate_global_ssim_loss(a, b).item()
