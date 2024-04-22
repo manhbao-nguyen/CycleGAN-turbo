@@ -192,19 +192,18 @@ def main(args):
                 # A -> fake B -> rec A
                 #TODO: optimize for bsz > 1
                 #breakpoint()
-                # encoding_src_ed = fixed_a2b_emb#text_encoder(batch["input_ids_src_ed"].unsqueeze(0))[0].detach() #.to(accelerator.device)
-                # encoding_tgt_ed = fixed_a2b_emb#text_encoder(batch["input_ids_tgt_ed"].unsqueeze(0))[0].detach()
-                # encoding_tgt_or = fixed_a2b_emb#text_encoder(batch["input_ids_tgt_or"].unsqueeze(0))[0].detach()
-                # encoding_src_or = fixed_a2b_emb#text_encoder(batch["input_ids_src_or"].unsqueeze(0))[0].detach()
-                # print(accelerator.sync_gradients)
-                # breakpoint()
-                cyc_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
-                cyc_rec_a = CycleGAN_Turbo.forward_with_networks(cyc_fake_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                encoding_src_ed = text_encoder(batch["input_ids_src_ed"].unsqueeze(0))[0].detach() #.to(accelerator.device)
+                encoding_tgt_ed = text_encoder(batch["input_ids_tgt_ed"].unsqueeze(0))[0].detach()
+                encoding_tgt_or = text_encoder(batch["input_ids_tgt_or"].unsqueeze(0))[0].detach()
+                encoding_src_or = text_encoder(batch["input_ids_src_or"].unsqueeze(0))[0].detach()
+
+                cyc_fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
+                cyc_rec_a = CycleGAN_Turbo.forward_with_networks(cyc_fake_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_or)
                 loss_cycle_a = crit_cycle(cyc_rec_a, img_a) * args.lambda_cycle
                 loss_cycle_a += net_lpips(cyc_rec_a, img_a).mean() * args.lambda_cycle_lpips #TODO: voir si on peut enlever ou pas 
                 # B -> fake A -> rec B
-                cyc_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
-                cyc_rec_b = CycleGAN_Turbo.forward_with_networks(cyc_fake_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb) #TODO: OOM error happens here
+                cyc_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
+                cyc_rec_b = CycleGAN_Turbo.forward_with_networks(cyc_fake_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_or) 
                 loss_cycle_b = crit_cycle(cyc_rec_b, img_b) * args.lambda_cycle
                 loss_cycle_b += net_lpips(cyc_rec_b, img_b).mean() * args.lambda_cycle_lpips
                 accelerator.backward(loss_cycle_a + loss_cycle_b, retain_graph=False)
@@ -219,8 +218,8 @@ def main(args):
                 """
                 Generator Objective (GAN) for task a->b and b->a (fake inputs)
                 """
-                fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
-                fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
+                fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
                 loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan #TODO: not sure about this order
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
                 accelerator.backward(loss_gan_a + loss_gan_b, retain_graph=False)
@@ -234,10 +233,10 @@ def main(args):
                 """
                 Identity Objective
                 """
-                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
                 loss_idt_a = crit_idt(idt_a, img_b) * args.lambda_idt
                 loss_idt_a += net_lpips(idt_a, img_b).mean() * args.lambda_idt_lpips #TODO: what is net_lpips? 
-                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
                 loss_idt_b = crit_idt(idt_b, img_a) * args.lambda_idt
                 loss_idt_b += net_lpips(idt_b, img_a).mean() * args.lambda_idt_lpips
                 loss_g_idt = loss_idt_a + loss_idt_b
