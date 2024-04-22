@@ -50,4 +50,7 @@ if __name__ == "__main__":
     # save the output image
     bname = os.path.basename(args.input_image)
     os.makedirs(args.output_dir, exist_ok=True)
+
+
+    #input_img.save(args.input_image)
     output_pil.save(os.path.join(args.output_dir, bname))

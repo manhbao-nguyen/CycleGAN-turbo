@@ -92,7 +92,7 @@ def initialize_vae(rank=4, return_lora_module_names=False):
     # torch.nn.init.constant_(vae.decoder.skip_conv_2.weight, 1e-5)
     # torch.nn.init.constant_(vae.decoder.skip_conv_3.weight, 1e-5)
     # torch.nn.init.constant_(vae.decoder.skip_conv_4.weight, 1e-5)
-    vae.decoder.ignore_skip = False
+    vae.decoder.ignore_skip = True
     vae.decoder.gamma = 1
     l_vae_target_modules = ["conv1","conv2","conv_in", "conv_shortcut",
         "conv", "conv_out", "to_k", "to_q", "to_v", "to_out.0",
@@ -116,11 +116,11 @@ class CycleGAN_Turbo(torch.nn.Module):
         vae.encoder.forward = my_vae_encoder_fwd.__get__(vae.encoder, vae.encoder.__class__)
         vae.decoder.forward = my_vae_decoder_fwd.__get__(vae.decoder, vae.decoder.__class__)
         # add the skip connection convs
-        vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.ignore_skip = False
+        # vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
+        # vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
+        # vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
+        # vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
+        vae.decoder.ignore_skip = True
         self.unet, self.vae = unet, vae
         if pretrained_name == "day_to_night":
             url = "https://www.cs.cmu.edu/~img2img-turbo/models/day2night.pkl"
@@ -239,6 +239,7 @@ class CycleGAN_Turbo(torch.nn.Module):
         return params_gen
 
     def forward(self, x_t, direction=None, caption=None, caption_emb=None):
+        #print("caption used is: ", caption)
         if direction is None:
             assert self.direction is not None
             direction = self.direction
