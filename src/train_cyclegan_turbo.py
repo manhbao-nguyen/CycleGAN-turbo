@@ -53,6 +53,7 @@ def main(args):
     print("loaded models!")
 
     crit_cycle, crit_idt = torch.nn.L1Loss(), torch.nn.L1Loss() #TODO:  MODIFY these losses? 
+    crit_supervised = torch.nn.L1Loss()
 
     if args.enable_xformers_memory_efficient_attention:
         unet.enable_xformers_memory_efficient_attention()
@@ -178,14 +179,43 @@ def main(args):
         for step, batch in enumerate(train_dataloader):
             l_acc = [unet, net_disc_a, net_disc_b, vae_enc, vae_dec]
             with accelerator.accumulate(*l_acc):
-                img_a = batch["pixel_values_src"].to(dtype=weight_dtype)
-                img_b = batch["pixel_values_tgt"].to(dtype=weight_dtype)
+                img_a = batch["pixel_values_s_src"].to(dtype=weight_dtype)
+                img_b = batch["pixel_values_s_tgt"].to(dtype=weight_dtype)
 
                 bsz = img_a.shape[0]
                 fixed_a2b_emb = fixed_a2b_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype)
                 fixed_b2a_emb = fixed_b2a_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype)
                 timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * bsz, device=img_a.device).long()
 
+                """
+                Supervised
+                """
+                #TODO : ONLY FOR BSZ = 1 (more involved filtering for bigger batchs sizes)
+                img_a_target = batch["pixel_values_t_src"]
+                img_b_target = batch["pixel_values_t_tgt"]
+                loss_supervised = 0
+                if not torch.isnan(img_a_target).all():
+                    src_output_caption = text_encoder(batch["input_ids_src_output"].unsqueeze(0))[0].detach() 
+                    tar_a = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,src_output_caption)
+                    loss_supervised_a = crit_supervised(tar_a, img_a_target) * args.lambda_sup 
+                    loss_supervised_a += net_lpips(tar_a, img_a_target).mean() * args.lambda_sup_lpips
+                    loss_supervised += loss_supervised_a
+                
+                if not torch.isnan(img_b_target).all():
+                    tgt_output_caption = text_encoder(batch["input_ids_tgt_output"].unsqueeze(0))[0].detach() 
+                    tar_b = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,tgt_output_caption)
+                    loss_supervised_b = crit_supervised(tar_b, img_b_target) * args.lambda_sup 
+                    loss_supervised_b += net_lpips(tar_b, img_b_target).mean() * args.lambda_sup_lpips
+                    loss_supervised += loss_supervised_b
+
+                accelerator.backward(loss_supervised, retain_graph=False)
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
+                
+                optimizer_gen.step()
+                lr_scheduler_gen.step()
+                optimizer_gen.zero_grad()
+                
                 """
                 Cycle Objective
                 """
@@ -233,10 +263,10 @@ def main(args):
                 """
                 Identity Objective
                 """
-                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
+                idt_a = CycleGAN_Turbo.forward_with_networks(img_b, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_or)
                 loss_idt_a = crit_idt(idt_a, img_b) * args.lambda_idt
                 loss_idt_a += net_lpips(idt_a, img_b).mean() * args.lambda_idt_lpips #TODO: what is net_lpips? 
-                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
+                idt_b = CycleGAN_Turbo.forward_with_networks(img_a, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_or)
                 loss_idt_b = crit_idt(idt_b, img_a) * args.lambda_idt
                 loss_idt_b += net_lpips(idt_b, img_a).mean() * args.lambda_idt_lpips
                 loss_g_idt = loss_idt_a + loss_idt_b
@@ -296,8 +326,8 @@ def main(args):
                     if global_step % args.viz_freq == 1:
                         for tracker in accelerator.trackers:
                             if tracker.name == "wandb":
-                                viz_img_a = batch["pixel_values_src"].to(dtype=weight_dtype)
-                                viz_img_b = batch["pixel_values_tgt"].to(dtype=weight_dtype)
+                                viz_img_a = batch["pixel_values_s_src"].to(dtype=weight_dtype)
+                                viz_img_b = batch["pixel_values_s_tgt"].to(dtype=weight_dtype)
                                 log_dict = {
                                     "train/real_a": [wandb.Image(viz_img_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)],
                                     "train/real_b": [wandb.Image(viz_img_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)],
