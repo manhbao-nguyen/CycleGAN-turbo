@@ -327,6 +327,7 @@ class UnpairedDataset(torch.utils.data.Dataset):
         - tokenizer: The tokenizer used for tokenizing the captions (or prompts).
         """
         super().__init__()
+        self.data_folder = dataset_folder
         if split == "train":
             self.source_folder = os.path.join(dataset_folder, "train_A")
             self.target_folder = os.path.join(dataset_folder, "train_B")
@@ -443,7 +444,12 @@ class UnpairedDataset(torch.utils.data.Dataset):
 
         if img_src_idx in self.idx2tgt_a:
             out_img_src_idx = self.idx2tgt_a[img_src_idx]
-            out_img_pil_src = Image.open(os.path.join(self.source_folder, out_img_src_idx)).convert("RGB")
+            try:
+                out_img_pil_src = Image.open(os.path.join(self.target_folder, out_img_src_idx)).convert("RGB")
+            except:
+                # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
+                out_img_pil_src = Image.open(os.path.join(os.path.join(self.data_folder, "test_B"), out_img_src_idx)).convert("RGB")
+                
             img_t_src = F.to_tensor(self.T(out_img_pil_src))
             img_t_src = F.normalize(img_t_src, mean=[0.5], std=[0.5])
             if out_img_src_idx in self.idx2captions_b:
@@ -457,8 +463,15 @@ class UnpairedDataset(torch.utils.data.Dataset):
         
         
         if img_tgt_idx in self.idx2tgt_b:
+        
             out_img_tgt_idx = self.idx2tgt_b[img_tgt_idx]
-            out_img_pil_tgt = Image.open(os.path.join(self.source_folder, out_img_tgt_idx)).convert("RGB")
+            try:
+                out_img_pil_tgt = Image.open(os.path.join(self.source_folder, out_img_tgt_idx)).convert("RGB")
+            except:
+                # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
+                out_img_pil_tgt = Image.open(os.path.join(os.path.join(self.data_folder, "test_A"), out_img_tgt_idx)).convert("RGB")
+   
+            
             img_t_tgt = F.to_tensor(self.T(out_img_pil_tgt))
             img_t_tgt = F.normalize(img_t_tgt, mean=[0.5], std=[0.5])
             if out_img_tgt_idx in self.idx2captions_a:

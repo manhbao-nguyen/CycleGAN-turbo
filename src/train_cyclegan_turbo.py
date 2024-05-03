@@ -41,7 +41,7 @@ def main(args):
     vae_a2b.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     unet.to(accelerator.device, dtype=weight_dtype)
-    text_encoder.requires_grad_(False)
+    text_encoder.requires_grad_(False) #TODO: unfreeze text encoder
 
     if args.gan_disc_type == "vagan_clip":
         net_disc_a = vision_aided_loss.Discriminator(cv_type='clip', loss_type=args.gan_loss_type, device="cuda")
@@ -208,13 +208,14 @@ def main(args):
                     loss_supervised_b += net_lpips(tar_b, img_b_target).mean() * args.lambda_sup_lpips
                     loss_supervised += loss_supervised_b
 
-                accelerator.backward(loss_supervised, retain_graph=False)
-                if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
-                
-                optimizer_gen.step()
-                lr_scheduler_gen.step()
-                optimizer_gen.zero_grad()
+                if loss_supervised != 0:
+                    accelerator.backward(loss_supervised, retain_graph=False)
+                    if accelerator.sync_gradients:
+                        accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
+                    
+                    optimizer_gen.step()
+                    lr_scheduler_gen.step()
+                    optimizer_gen.zero_grad()
                 
                 """
                 Cycle Objective
@@ -314,6 +315,8 @@ def main(args):
             logs["disc_b"] = loss_D_B_fake.detach().item() + loss_D_B_real.detach().item()
             logs["idt_a"] = loss_idt_a.detach().item()
             logs["idt_b"] = loss_idt_b.detach().item()
+            logs["sup_a"] = loss_supervised_a.detach().item()
+            logs["sup_b"] = loss_supervised_b.detach().item()
 
             if accelerator.sync_gradients:
                 progress_bar.update(1)
@@ -336,6 +339,8 @@ def main(args):
                                 log_dict["train/rec_b"] = [wandb.Image(cyc_rec_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 log_dict["train/fake_b"] = [wandb.Image(fake_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 log_dict["train/fake_a"] = [wandb.Image(fake_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
+                                log_dict["train/sup_from_a"] = [wandb.Image(tar_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)] 
+                                log_dict["train/sup_from_b"] = [wandb.Image(tar_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 tracker.log(log_dict)
                                 gc.collect()
                                 torch.cuda.empty_cache()
