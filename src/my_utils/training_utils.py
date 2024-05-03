@@ -357,21 +357,21 @@ class UnpairedDataset(torch.utils.data.Dataset):
             self.l_imgs_tgt.extend(glob(os.path.join(self.target_folder, ext)))
         self.T = build_transform(image_prep)
 
-        with open(os.path.join(dataset_folder, "captions_a.json"), "r") as json_file_a:
+        with open(os.path.join(dataset_folder, "captions_multiple_a.json"), "r") as json_file_a:
                 captions_a = json.load(json_file_a)
         self.idx2captions_a = captions_a
 
-        with open(os.path.join(dataset_folder, "captions_b.json"), "r") as json_file_b:
+        with open(os.path.join(dataset_folder, "captions_multiple_b.json"), "r") as json_file_b:
                 captions_b = json.load(json_file_b)
         self.idx2captions_b = captions_b
 
-        with open(os.path.join(dataset_folder, "targets_a.json"), "r") as target_file_a:
-                targets_a = json.load(target_file_a)
-        self.idx2tgt_a = targets_a
+        # with open(os.path.join(dataset_folder, "targets_a.json"), "r") as target_file_a:
+        #         targets_a = json.load(target_file_a)
+        # self.idx2tgt_a = targets_a
 
-        with open(os.path.join(dataset_folder, "targets_b.json"), "r") as target_file_b:
-                targets_b = json.load(target_file_b)
-        self.idx2tgt_b = targets_b
+        # with open(os.path.join(dataset_folder, "targets_b.json"), "r") as target_file_b:
+        #         targets_b = json.load(target_file_b)
+        # self.idx2tgt_b = targets_b
 
     def __len__(self):
         """
@@ -407,8 +407,9 @@ class UnpairedDataset(torch.utils.data.Dataset):
             - "input_ids_src": The source domain's fixed caption tokenized.
             - "input_ids_tgt": The target domain's fixed caption tokenized.
         """
-        if index < len(self.l_imgs_src):
-            img_path_src = self.l_imgs_src[index]
+
+        if index < len(self.l_imgs_src) * 2:
+            img_path_src = self.l_imgs_src[index // 2]
         else:
             img_path_src = random.choice(self.l_imgs_src)
         img_path_tgt = random.choice(self.l_imgs_tgt)
@@ -418,14 +419,22 @@ class UnpairedDataset(torch.utils.data.Dataset):
 
         if img_src_idx in self.idx2captions_a:
             caption_src_or = self.idx2captions_a[img_src_idx]["cap_original"]
-            caption_src_ed = self.idx2captions_a[img_src_idx]["cap_edited"] 
+            if index % 2:
+                caption_src_ed = self.idx2captions_a[img_src_idx]["cap_edited"][0]
+            else:
+                caption_src_ed = self.idx2captions_a[img_src_idx]["cap_edited"][4]
+
         else:
             caption_src_or = self.fixed_caption_src 
             caption_src_ed = self.fixed_caption_tgt
 
         if img_tgt_idx in self.idx2captions_b:
             caption_tgt_or = self.idx2captions_b[img_tgt_idx]["cap_original"]
-            caption_tgt_ed = self.idx2captions_b[img_tgt_idx]["cap_edited"] 
+            if index % 2:
+                caption_tgt_ed = self.idx2captions_b[img_tgt_idx]["cap_edited"][0] 
+            else:
+                caption_tgt_ed = self.idx2captions_b[img_tgt_idx]["cap_edited"][4] 
+
         else:
             caption_tgt_or = self.fixed_caption_tgt
             caption_tgt_ed = self.fixed_caption_src
@@ -442,56 +451,56 @@ class UnpairedDataset(torch.utils.data.Dataset):
         img_s_src = F.normalize(img_s_src, mean=[0.5], std=[0.5])
         img_s_tgt = F.normalize(img_s_tgt, mean=[0.5], std=[0.5])
 
-        if img_src_idx in self.idx2tgt_a:
-            out_img_src_idx = self.idx2tgt_a[img_src_idx]
-            try:
-                out_img_pil_src = Image.open(os.path.join(self.target_folder, out_img_src_idx)).convert("RGB")
-            except:
-                # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
-                out_img_pil_src = Image.open(os.path.join(os.path.join(self.data_folder, "test_B"), out_img_src_idx)).convert("RGB")
+        # if img_src_idx in self.idx2tgt_a:
+        #     out_img_src_idx = self.idx2tgt_a[img_src_idx]
+        #     try:
+        #         out_img_pil_src = Image.open(os.path.join(self.target_folder, out_img_src_idx)).convert("RGB")
+        #     except:
+        #         # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
+        #         out_img_pil_src = Image.open(os.path.join(os.path.join(self.data_folder, "test_B"), out_img_src_idx)).convert("RGB")
                 
-            img_t_src = F.to_tensor(self.T(out_img_pil_src))
-            img_t_src = F.normalize(img_t_src, mean=[0.5], std=[0.5])
-            if out_img_src_idx in self.idx2captions_b:
-                caption_output_for_a = self.idx2captions_b[out_img_src_idx]["cap_original"]
-            else:
-                caption_output_for_a = self.fixed_caption_tgt
-            input_src_out_cap = self.tokenizer(caption_output_for_a, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids
-        else:
-            img_t_src = torch.full(img_s_src.shape, float('nan'))
-            input_src_out_cap = torch.full(self.input_ids_src.shape, float('nan'))
+        #     img_t_src = F.to_tensor(self.T(out_img_pil_src))
+        #     img_t_src = F.normalize(img_t_src, mean=[0.5], std=[0.5])
+        #     if out_img_src_idx in self.idx2captions_b:
+        #         caption_output_for_a = self.idx2captions_b[out_img_src_idx]["cap_original"]
+        #     else:
+        #         caption_output_for_a = self.fixed_caption_tgt
+        #     input_src_out_cap = self.tokenizer(caption_output_for_a, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids
+        # else:
+        #     img_t_src = torch.full(img_s_src.shape, float('nan'))
+        #     input_src_out_cap = torch.full(self.input_ids_src.shape, float('nan'))
         
         
-        if img_tgt_idx in self.idx2tgt_b:
+        # if img_tgt_idx in self.idx2tgt_b:
         
-            out_img_tgt_idx = self.idx2tgt_b[img_tgt_idx]
-            try:
-                out_img_pil_tgt = Image.open(os.path.join(self.source_folder, out_img_tgt_idx)).convert("RGB")
-            except:
-                # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
-                out_img_pil_tgt = Image.open(os.path.join(os.path.join(self.data_folder, "test_A"), out_img_tgt_idx)).convert("RGB")
+        #     out_img_tgt_idx = self.idx2tgt_b[img_tgt_idx]
+        #     try:
+        #         out_img_pil_tgt = Image.open(os.path.join(self.source_folder, out_img_tgt_idx)).convert("RGB")
+        #     except:
+        #         # os.path.join(self.target_folder.split(os.sep)[:-1],"test_B")
+        #         out_img_pil_tgt = Image.open(os.path.join(os.path.join(self.data_folder, "test_A"), out_img_tgt_idx)).convert("RGB")
    
             
-            img_t_tgt = F.to_tensor(self.T(out_img_pil_tgt))
-            img_t_tgt = F.normalize(img_t_tgt, mean=[0.5], std=[0.5])
-            if out_img_tgt_idx in self.idx2captions_a:
-                caption_output_for_b = self.idx2captions_a[out_img_tgt_idx]["cap_original"]
-            else:
-                caption_output_for_b = self.fixed_caption_src
-            input_tgt_out_cap = self.tokenizer(caption_output_for_b, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids
-        else:
-            img_t_tgt = torch.full(img_s_src.shape, float('nan'))
-            input_tgt_out_cap = torch.full(self.input_ids_src.shape, float('nan'))
+        #     img_t_tgt = F.to_tensor(self.T(out_img_pil_tgt))
+        #     img_t_tgt = F.normalize(img_t_tgt, mean=[0.5], std=[0.5])
+        #     if out_img_tgt_idx in self.idx2captions_a:
+        #         caption_output_for_b = self.idx2captions_a[out_img_tgt_idx]["cap_original"]
+        #     else:
+        #         caption_output_for_b = self.fixed_caption_src
+        #     input_tgt_out_cap = self.tokenizer(caption_output_for_b, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids
+        # else:
+        #     img_t_tgt = torch.full(img_s_src.shape, float('nan'))
+        #     input_tgt_out_cap = torch.full(self.input_ids_src.shape, float('nan'))
 
 
     
         return {
             "pixel_values_s_src": img_s_src,
             "pixel_values_s_tgt": img_s_tgt,
-            "pixel_values_t_src":img_t_src,
-            "pixel_values_t_tgt":img_t_tgt,
-            "input_ids_src_output": input_src_out_cap,
-            "input_ids_tgt_output": input_tgt_out_cap,
+            # "pixel_values_t_src":img_t_src,
+            # "pixel_values_t_tgt":img_t_tgt,
+            # "input_ids_src_output": input_src_out_cap,
+            # "input_ids_tgt_output": input_tgt_out_cap,
             "input_ids_src_or": self.tokenizer(caption_src_or, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,
             "input_ids_src_ed": self.tokenizer(caption_src_ed, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,
             "input_ids_tgt_or": self.tokenizer(caption_tgt_or, max_length = self.tokenizer.model_max_length,padding="max_length", truncation=True, return_tensors="pt").input_ids,

@@ -71,6 +71,8 @@ def main(args):
     vae_enc = VAE_encode(vae_a2b, vae_b2a=vae_b2a)
     vae_dec = VAE_decode(vae_a2b, vae_b2a=vae_b2a)
 
+    # optimizer_text = torch.optim.AdamW(, lr=args.learning_rate, betas=(args.adam_beta1, args.adam_beta2),
+    #     weight_decay=args.adam_weight_decay, eps=args.adam_epsilon,)
     optimizer_gen = torch.optim.AdamW(params_gen, lr=args.learning_rate, betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay, eps=args.adam_epsilon,)
 
@@ -187,35 +189,35 @@ def main(args):
                 fixed_b2a_emb = fixed_b2a_emb_base.repeat(bsz, 1, 1).to(dtype=weight_dtype)
                 timesteps = torch.tensor([noise_scheduler_1step.config.num_train_timesteps - 1] * bsz, device=img_a.device).long()
 
-                """
-                Supervised
-                """
-                #TODO : ONLY FOR BSZ = 1 (more involved filtering for bigger batchs sizes)
-                img_a_target = batch["pixel_values_t_src"]
-                img_b_target = batch["pixel_values_t_tgt"]
-                loss_supervised = 0
-                if not torch.isnan(img_a_target).all():
-                    src_output_caption = text_encoder(batch["input_ids_src_output"].unsqueeze(0))[0].detach() 
-                    tar_a = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,src_output_caption)
-                    loss_supervised_a = crit_supervised(tar_a, img_a_target) * args.lambda_sup 
-                    loss_supervised_a += net_lpips(tar_a, img_a_target).mean() * args.lambda_sup_lpips
-                    loss_supervised += loss_supervised_a
+                # """
+                # Supervised
+                # """
+                # #TODO : ONLY FOR BSZ = 1 (more involved filtering for bigger batchs sizes)
+                # img_a_target = batch["pixel_values_t_src"]
+                # img_b_target = batch["pixel_values_t_tgt"]
+                # loss_supervised = 0
+                # if not torch.isnan(img_a_target).all():
+                #     src_output_caption = text_encoder(batch["input_ids_src_output"].unsqueeze(0))[0].detach() 
+                #     tar_a = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,src_output_caption)
+                #     loss_supervised_a = crit_supervised(tar_a, img_a_target) * args.lambda_sup 
+                #     loss_supervised_a += net_lpips(tar_a, img_a_target).mean() * args.lambda_sup_lpips
+                #     loss_supervised += loss_supervised_a
                 
-                if not torch.isnan(img_b_target).all():
-                    tgt_output_caption = text_encoder(batch["input_ids_tgt_output"].unsqueeze(0))[0].detach() 
-                    tar_b = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,tgt_output_caption)
-                    loss_supervised_b = crit_supervised(tar_b, img_b_target) * args.lambda_sup 
-                    loss_supervised_b += net_lpips(tar_b, img_b_target).mean() * args.lambda_sup_lpips
-                    loss_supervised += loss_supervised_b
+                # if not torch.isnan(img_b_target).all():
+                #     tgt_output_caption = text_encoder(batch["input_ids_tgt_output"].unsqueeze(0))[0].detach() 
+                #     tar_b = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps,tgt_output_caption)
+                #     loss_supervised_b = crit_supervised(tar_b, img_b_target) * args.lambda_sup 
+                #     loss_supervised_b += net_lpips(tar_b, img_b_target).mean() * args.lambda_sup_lpips
+                #     loss_supervised += loss_supervised_b
 
-                if loss_supervised != 0:
-                    accelerator.backward(loss_supervised, retain_graph=False)
-                    if accelerator.sync_gradients:
-                        accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
+                # if loss_supervised != 0:
+                #     accelerator.backward(loss_supervised, retain_graph=False)
+                #     if accelerator.sync_gradients:
+                #         accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
                     
-                    optimizer_gen.step()
-                    lr_scheduler_gen.step()
-                    optimizer_gen.zero_grad()
+                #     optimizer_gen.step()
+                #     lr_scheduler_gen.step()
+                #     optimizer_gen.zero_grad()
                 
                 """
                 Cycle Objective
@@ -317,8 +319,8 @@ def main(args):
             logs["disc_b"] = loss_D_B_fake.detach().item() + loss_D_B_real.detach().item()
             logs["idt_a"] = loss_idt_a.detach().item()
             logs["idt_b"] = loss_idt_b.detach().item()
-            logs["sup_a"] = loss_supervised_a.detach().item()
-            logs["sup_b"] = loss_supervised_b.detach().item()
+            # logs["sup_a"] = loss_supervised_a.detach().item()
+            # logs["sup_b"] = loss_supervised_b.detach().item()
             print(f"our losses are ; ", logs)
             if any([not isinstance(x, float) for x in logs.values()]):
                 breakpoint()
@@ -345,8 +347,8 @@ def main(args):
                                 log_dict["train/rec_b"] = [wandb.Image(cyc_rec_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 log_dict["train/fake_b"] = [wandb.Image(fake_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 log_dict["train/fake_a"] = [wandb.Image(fake_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
-                                log_dict["train/sup_from_a"] = [wandb.Image(tar_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)] 
-                                log_dict["train/sup_from_b"] = [wandb.Image(tar_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
+                                # log_dict["train/sup_from_a"] = [wandb.Image(tar_a[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)] 
+                                # log_dict["train/sup_from_b"] = [wandb.Image(tar_b[idx].float().detach().cpu(), caption=f"idx={idx}") for idx in range(bsz)]
                                 tracker.log(log_dict)
                                 gc.collect()
                                 torch.cuda.empty_cache()
