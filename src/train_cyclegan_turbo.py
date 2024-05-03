@@ -251,8 +251,10 @@ def main(args):
                 """
                 fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_tgt_ed)
                 fake_b = CycleGAN_Turbo.forward_with_networks(img_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, encoding_src_ed)
-                loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan #TODO: not sure about this order
+                loss_gan_a = net_disc_a(fake_b, for_G=True).mean() * args.lambda_gan #TODO: not sure about this order 
+                # loss_gan_a += net_disc_a(img_a_target, for_G=False).mean() * args.lambda_gan
                 loss_gan_b = net_disc_b(fake_a, for_G=True).mean() * args.lambda_gan
+                # loss_gan_b += net_disc_b(img_b_target, for_G=False).mean() * args.lambda_gan
                 accelerator.backward(loss_gan_a + loss_gan_b, retain_graph=False)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
