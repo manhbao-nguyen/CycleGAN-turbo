@@ -41,7 +41,7 @@ def main(args):
     vae_a2b.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
     unet.to(accelerator.device, dtype=weight_dtype)
-    text_encoder.requires_grad_(False) #TODO: unfreeze text encoder
+    text_encoder.requires_grad_(True) #TODO: unfreeze text encoder
 
     if args.gan_disc_type == "vagan_clip":
         net_disc_a = vision_aided_loss.Discriminator(cv_type='clip', loss_type=args.gan_loss_type, device="cuda")
@@ -307,6 +307,8 @@ def main(args):
                 optimizer_disc.zero_grad()
 
             logs = {}
+            if any([torch.isnan(loss) for loss in {loss_cycle_a, loss_cycle_b, loss_gan_a}]):
+                breakpoint()
             logs["cycle_a"] = loss_cycle_a.detach().item()
             logs["cycle_b"] = loss_cycle_b.detach().item()
             logs["gan_a"] = loss_gan_a.detach().item()
@@ -317,6 +319,10 @@ def main(args):
             logs["idt_b"] = loss_idt_b.detach().item()
             logs["sup_a"] = loss_supervised_a.detach().item()
             logs["sup_b"] = loss_supervised_b.detach().item()
+            print(f"our losses are ; ", logs)
+            if any([not isinstance(x, float) for x in logs.values()]):
+                breakpoint()
+
 
             if accelerator.sync_gradients:
                 progress_bar.update(1)

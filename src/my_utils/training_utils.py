@@ -83,7 +83,7 @@ def parse_args_paired_training(input_args=None):
             " https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices"
         ),
     )
-    parser.add_argument("--report_to", type=str, default="wandb",
+    parser.add_argument("--report_to", type=str, default=None,
         help=(
             'The integration to report the results and logs to. Supported platforms are `"tensorboard"`'
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
@@ -157,7 +157,7 @@ def parse_args_unpaired_training():
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="The beta2 parameter for the Adam optimizer.")
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2, help="Weight decay to use.")
     parser.add_argument("--adam_epsilon", type=float, default=1e-08, help="Epsilon value for the Adam optimizer")
-    parser.add_argument("--max_grad_norm", default=10.0, type=float, help="Max gradient norm.")
+    parser.add_argument("--max_grad_norm", default=30.0, type=float, help="Max gradient norm.")
     parser.add_argument("--lr_scheduler", type=str, default="constant", help=(
         'The scheduler type to use. Choose between ["linear", "cosine", "cosine_with_restarts", "polynomial",'
         ' "constant", "constant_with_warmup"]'
